@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>NV_Strategy_Multiplayer_Fixed</title>
+    <style>
+        body {
+            margin: 0;
+            background: #111;
+            color: #eee;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            overflow: hidden;
+        }
+
+        /* Главный интерфейс управления */
+        #top-ui-panel {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 120px;
+            background: #2c3e50;
+            border-bottom: 5px solid #d35400;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            padding: 15px;
+            z-index: 1000;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.5);
+        }
+
+        button {
+            background: #34495e;
+            color: #ecf0f1;
+            border: 2px solid #7f8c8d;
+            padding: 6px 12px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: bold;
+            border-radius: 4px;
+            transition: 0.2s;
+        }
+
+        button:hover {
+            background: #d35400;
+            border-color: #fff;
+        }
+
+        input {
+            background: #1a1a1a;
+            color: #2ecc71;
+            border: 2px solid #2ecc71;
+            padding: 8px;
+            border-radius: 4px;
+            outline: none;
+        }
+
+        /* Информационные панели игроков */
+        #players-data-container {
+            position: fixed;
+            top: 140px;
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            padding: 0 30px;
+            z-index: 500;
+            pointer-events: none;
+        }
+
+        .player-card {
+            background: rgba(0,0,0,0.85);
+            padding: 15px;
+            border-left: 5px solid #d35400;
+            border-right: 5px solid #d35400;
+            min-width: 250px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.7);
+        }
+
+        /* Контейнер карты */
+        #game-world {
+            position: absolute;
+            top: 140px;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: #222;
+            overflow: auto;
+        }
+
+        #battle-map {
+            position: relative;
+            width: 2500px;
+            height: 1800px;
+            background-image: radial-gradient(#333 1px, transparent 1px);
+            background-size: 40px 40px;
+        }
+
+        .city-box {
+            position: absolute;
+            width: 110px;
+            height: 110px;
+            border: 3px solid #000;
+            border-radius: 12px;
+            text-align: center;
+            font-size: 11px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            transition: all 0.2s ease-in-out;
+            box-shadow: 4px 4px 8px rgba(0,0,0,0.6);
+        }
+
+        .city-box:active {
+            transform: scale(0.95);
+        }
+
+        .selected-city {
+            outline: 6px solid #f1c40f;
+            z-index: 100;
+            box-shadow: 0 0 25px #f1c40f;
+        }
+
+        /* Нации */
+        .Germany { background: #4b4b4b; color: white; }
+        .France { background: #2980b9; color: white; }
+        .USSR { background: #c0392b; color: white; }
+        .UK { background: #8e44ad; color: white; }
+        .Spain { background: #e67e22; color: white; }
+        .Italy { background: #16a085; color: white; }
+        .Poland { background: #ecf0f1; color: #2c3e50; }
+        .Yugoslavia { background: #27ae60; color: white; }
+        .Romania { background: #f1c40f; color: black; }
+        .Sweden { background: #3498db; color: white; }
+        .Finland { background: #95a5a6; color: black; }
+
+        /* Оверлей хода */
+        #turn-blocker {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: radial-gradient(circle, #2c3e50, #000);
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+        }
+
+        .nuclear-effect {
+            border: 4px dashed #ffeb3b !important;
+            animation: pulse-red 1s infinite;
+        }
+
+        @keyframes pulse-red {
+            0% { box-shadow: 0 0 5px red; }
+            50% { box-shadow: 0 0 30px red; }
+            100% { box-shadow: 0 0 5px red; }
+        }
+    </style>
+</head>
+<body>
+
+<div id="turn-blocker">
+    <h1 id="waiting-text" style="font-size: 50px; color: #e67e22; text-shadow: 2px 2px #000;">ПОДГОТОВКА ХОДА...</h1>
+    <p style="color: #bdc3c7; font-size: 20px;">Смена командования. Второму игроку приготовиться.</p>
+    <button style="padding: 25px 60px; font-size: 28px; background: #27ae60; color: white; border: none; cursor: pointer;" onclick="releaseTurn()">ВСТУПИТЬ В КОМАНДОВАНИЕ</button>
+</div>
+
+<div id="top-ui-panel">
+    <div style="width: 100%; display: flex; gap: 15px; align-items: center;">
+        <input id="multi-input" style="width: 350px;" placeholder="Страна 1, Страна 2 (например: Germany, USSR)">
+        <button onclick="launchWar()" style="background: #2ecc71;">ЗАПУСТИТЬ СТРАТЕГИЮ</button>
+        <button onclick="swapPlayerTurn()" style="background: #e74c3c;">ЗАВЕРШИТЬ ТЕКУЩИЙ ХОД</button>
+        <div id="turn-indicator" style="font-weight: bold; font-size: 20px; color: #f1c40f; text-transform: uppercase;">Ожидание...</div>
+    </div>
+    
+    <button onclick="setMode('info')">ИНСПЕКЦИЯ</button>
+    <button onclick="setMode('factory')">СТРОИТЬ ЗАВОД (5000)</button>
+    <button onclick="setMode('tanks')">ТАНКОВЫЙ ЗАВОД (25000)</button>
+    <button onclick="setMode('air')">АЭРОДРОМ (30000)</button>
+    <button onclick="buyReservePlane()">КУПИТЬ САМОЛЕТ (5000)</button>
+    <button onclick="setMode('deploy')">ДИСЛОКАЦИЯ ВОЙСК</button>
+    <button onclick="setMode('fly')">ПЕРЕБРОСКА АВИАЦИИ</button>
+    <button onclick="setMode('strike')">АВИАУДАР 🔥</button>
+    <button onclick="setMode('attack')">НАЗЕМНАЯ АТАКА ⚔️</button>
+</div>
+
+<div id="players-data-container">
+    <div id="p1-card" class="player-card">
+        <h2 id="p1-name-display" style="color: #3498db; margin: 0 0 10px 0;">Игрок 1</h2>
+        💰 Бюджет: <span id="p1-m">0</span><br>
+        🪖 Пехота: <span id="p1-r">0</span><br>
+        🚓 Танки: <span id="p1-t">0</span><br>
+        ✈️ Самолеты: <span id="p1-a">0</span>
+    </div>
+    <div id="p2-card" class="player-card">
+        <h2 id="p2-name-display" style="color: #e74c3c; margin: 0 0 10px 0;">Игрок 2</h2>
+        💰 Бюджет: <span id="p2-m">0</span><br>
+        🪖 Пехота: <span id="p2-r">0</span><br>
+        🚓 Танки: <span id="p2-t">0</span><br>
+        ✈️ Самолеты: <span id="p2-a">0</span>
+    </div>
+</div>
+
+<div id="game-world">
+    <div id="battle-map"></div>
+</div>
+
+<script>
+    /* =========================================================
+       ЯДРО ИГРЫ: ПЕРЕМЕННЫЕ И НАСТРОЙКИ
+       =========================================================
+    */
+
+    let isWarStarted = false;
+    let activePlayerID = 1; // 1 или 2
+    let currentCommandMode = null;
+    let targetCitySelection = null;
+    let allCitiesList = [];
+    let warsStateMap = {};
+
+    // Данные Игрока 1 (Глобальные)
+    let p1_name = "";
+    let p1_money = 500;
+    let p1_inf_res = 0;
+    let p1_tnk_res = 0;
+    let p1_pln_res = 0;
+
+    // Данные Игрока 2 (Глобальные)
+    let p2_name = "";
+    let p2_money = 500;
+    let p2_inf_res = 0;
+    let p2_tnk_res = 0;
+    let p2_pln_res = 0;
+
+    // Глобальные флаги событий
+    let strikeInProcess = false;
+    let turnEventPhase = 'good';
+    let turnActionCount = 0;
+
+    const capitalsList = {
+        Germany: 'Berlin', France: 'Paris', USSR: 'Moscow', UK: 'London',
+        Spain: 'Madrid', Italy: 'Rome', Romania: 'Bucharest',
+        Yugoslavia: 'Belgrade', Finland: 'Helsinki', Sweden: 'Stockholm', Poland: 'Warsaw'
+    };
+
+    /* ОБНОВЛЕНИЕ ДАННЫХ НА ЭКРАНЕ
+    */
+    function updateDashboard() {
+        // Игрок 1
+        document.getElementById("p1-m").innerText = Math.floor(p1_money);
+        document.getElementById("p1-r").innerText = Math.floor(p1_inf_res);
+        document.getElementById("p1-t").innerText = Math.floor(p1_tnk_res);
+        document.getElementById("p1-a").innerText = Math.floor(p1_pln_res);
+        document.getElementById("p1-name-display").innerText = p1_name || "Игрок 1";
+
+        // Игрок 2
+        document.getElementById("p2-m").innerText = Math.floor(p2_money);
+        document.getElementById("p2-r").innerText = Math.floor(p2_inf_res);
+        document.getElementById("p2-t").innerText = Math.floor(p2_tnk_res);
+        document.getElementById("p2-a").innerText = Math.floor(p2_pln_res);
+        document.getElementById("p2-name-display").innerText = p2_name || "Игрок 2";
+
+        // Индикатор хода
+        let curName = (activePlayerID === 1) ? p1_name : p2_name;
+        document.getElementById("turn-indicator").innerText = "СЕЙЧАС ХОДИТ: " + curName;
+        document.getElementById("turn-indicator").style.color = (activePlayerID === 1) ? "#3498db" : "#e74c3c";
+    }
+
+    /* СОЗДАНИЕ ПЛИТКИ ГОРОДА
+    */
+    function spawnCity(cName, cCountry, posX, posY) {
+        let cityObj = {
+            name: cName,
+            country: cCountry,
+            x: posX,
+            y: posY,
+            army: 10,
+            tanks: 0,
+            planes: 0,
+            factories: 0,
+            maxFac: 2,
+            tankFac: false,
+            tankTimer: 0,
+            airfield: false,
+            bombed: false,
+            dom: null
+        };
+
+        // Стартовые условия для игроков
+        if (cCountry === p1_name || cCountry === p2_name) {
+            cityObj.army = 0;
+            cityObj.factories = 0;
+        } else {
+            cityObj.factories = 1;
+        }
+
+        let div = document.createElement("div");
+        div.className = "city-box " + cCountry;
+        div.style.left = posX + "px";
+        div.style.top = posY + "px";
+        div.onclick = function() { onCityClick(cityObj, div); };
+        
+        cityObj.dom = div;
+        allCitiesList.push(cityObj);
+        document.getElementById("battle-map").appendChild(div);
+        refreshCityView(cityObj);
+    }
+
+    function refreshCityView(city) {
+        let bombStyle = city.bombed ? " nuclear-effect" : "";
+        city.dom.className = "city-box " + city.country + bombStyle;
+        
+        city.dom.innerHTML = `
+            <b style="color:#f1c40f; text-shadow: 1px 1px #000;">${city.name}</b>
+            <div style="margin: 4px 0;">🪖 ${Math.floor(city.army)} | 🚓 ${city.tanks}</div>
+            ${city.planes > 0 ? "<div style='color:#00ffff;'>✈️ " + city.planes + "</div>" : ""}
+            <div style="font-size:9px; color:#bdc3c7;">🏭 ${city.factories}/${city.maxFac}</div>
+            <div style="font-size:8px; margin-top:3px;">
+                ${city.airfield ? "🚩 АЭРО" : ""} ${city.tankFac ? "⚙️ ТАНК" : ""}
+            </div>
+        `;
+    }
+
+    /* КЛИК ПО ГОРОДУ И РЕЖИМЫ
+    */
+    function onCityClick(city, element) {
+        if (!isWarStarted) return;
+
+        // Визуальное выделение
+        let all = document.getElementsByClassName("city-box");
+        for (let i = 0; i < all.length; i++) all[i].classList.remove("selected-city");
+        element.classList.add("selected-city");
+
+        let currentPName = (activePlayerID === 1) ? p1_name : p2_name;
+
+        // РЕЖИМЫ
+        if (currentCommandMode === 'info') {
+            alert("ГОРОД: " + city.name + "\nВЛАДЕЛЕЦ: " + city.country + "\nВОЙСКА: " + Math.floor(city.army));
+        }
+
+        if (currentCommandMode === 'factory' && city.country === currentPName) {
+            if (city.factories < city.maxFac) {
+                if (pay(5000)) { city.factories++; alert("Завод в " + city.name + " построен!"); }
+            } else { alert("Лимит заводов!"); }
+        }
+
+        if (currentCommandMode === 'tanks' && city.country === currentPName) {
+            if (capitalsList[city.country] === city.name && !city.tankFac) {
+                if (pay(25000)) { city.tankFac = true; alert("Танковое производство налажено!"); }
+            } else { alert("Танковый завод можно строить только в столице!"); }
+        }
+
+        if (currentCommandMode === 'air' && city.country === currentPName) {
+            if (!city.airfield) {
+                if (pay(30000)) { city.airfield = true; alert("Аэродром функционирует!"); }
+            }
+        }
+
+        if (currentCommandMode === 'deploy' && city.country === currentPName) {
+            let choice = prompt("Что высаживаем? (1 - Пехота, 2 - Танки)");
+            let qty = parseInt(prompt("Сколько единиц?"));
+            if (choice === '1') {
+                if (activePlayerID === 1 && qty <= p1_inf_res) { p1_inf_res -= qty; city.army += qty; }
+                else if (activePlayerID === 2 && qty <= p2_inf_res) { p2_inf_res -= qty; city.army += qty; }
+                else { alert("Недостаточно резервов пехоты!"); }
+            }
+            if (choice === '2') {
+                if (activePlayerID === 1 && qty <= p1_tnk_res) { p1_tnk_res -= qty; city.tanks += qty; }
+                else if (activePlayerID === 2 && qty <= p2_tnk_res) { p2_tnk_res -= qty; city.tanks += qty; }
+                else { alert("Недостаточно резервов танков!"); }
+            }
+        }
+
+        if (currentCommandMode === 'fly' && city.country === currentPName) {
+            if (city.airfield) {
+                let resP = (activePlayerID === 1) ? p1_pln_res : p2_pln_res;
+                let n = parseInt(prompt("В резерве " + resP + " самолетов. Сколько перебросить в " + city.name + "?"));
+                if (n <= resP) {
+                    if (activePlayerID === 1) p1_pln_res -= n; else p2_pln_res -= n;
+                    city.planes += n;
+                }
+            } else { alert("В этом городе нет аэродрома!"); }
+        }
+
+        if (currentCommandMode === 'strike' && city.country !== currentPName) {
+            if (targetCitySelection && targetCitySelection.country === currentPName && targetCitySelection.planes > 0) {
+                let n = parseInt(prompt("Сколько самолетов поднять в воздух из " + targetCitySelection.name + "?"));
+                if (n <= targetCitySelection.planes) {
+                    targetCitySelection.planes -= n;
+                    city.army = 0;
+                    city.tanks = 0;
+                    city.bombed = true;
+                    warsStateMap[city.country] = true;
+                    alert("ЦЕЛЬ УНИЧТОЖЕНА! Весь гарнизон " + city.name + " превращен в пепел.");
+                }
+            } else { alert("Сначала выберите свой город с самолетами!"); }
+        }
+
+        if (currentCommandMode === 'attack') {
+            if (targetCitySelection && targetCitySelection.country === currentPName && targetCitySelection !== city) {
+                handleBattle(targetCitySelection, city);
+            }
+        }
+
+        targetCitySelection = city;
+        refreshCityView(city);
+        updateDashboard();
+    }
+
+    /* БОЕВАЯ МЕХАНИКА
+    */
+    function handleBattle(atkr, dfndr) {
+        let type = prompt("Тип атаки: (1 - Пехота, 2 - Танки)");
+        let val = parseInt(prompt("Количество атакующих?"));
+        
+        if (dfndr.country !== atkr.country) warsStateMap[dfndr.country] = true;
+
+        if (dfndr.bombed) {
+            processCapture(dfndr, atkr.country, (type === '1' ? val : 0));
+        } else {
+            if (type === '2' && atkr.tanks >= val) {
+                atkr.tanks -= val;
+                if (val * 100 >= dfndr.army) processCapture(dfndr, atkr.country, 0);
+                else dfndr.army -= (val * 100);
+            }
+            if (type === '1' && atkr.army >= val) {
+                atkr.army -= val;
+                if (val >= dfndr.army) processCapture(dfndr, atkr.country, val - dfndr.army);
+                else dfndr.army -= val;
+            }
+        }
+        refreshCityView(atkr);
+        refreshCityView(dfndr);
+    }
+
+    function processCapture(target, owner, rem) {
+        let prevOwner = target.country;
+        target.country = owner;
+        target.army = rem;
+        target.tanks = 0;
+        target.bombed = false;
+        target.factories = 0;
+        turnActionCount++;
+
+        alert("ПОБЕДА! " + target.name + " теперь под контролем " + owner);
+
+        if (capitalsList[prevOwner] === target.name) {
+            alert("СТРАТЕГИЧЕСКАЯ ПОБЕДА! " + prevOwner + " капитулирует!");
+            for (let i = 0; i < allCitiesList.length; i++) {
+                if (allCitiesList[i].country === prevOwner) {
+                    allCitiesList[i].country = owner;
+                    allCitiesList[i].army = 0;
+                    allCitiesList[i].tanks = 0;
+                    refreshCityView(allCitiesList[i]);
+                }
+            }
+        }
+    }
+
+    /* ЭКОНОМИКА
+    */
+    function pay(sum) {
+        if (activePlayerID === 1) {
+            if (p1_money >= sum) { p1_money -= sum; return true; }
+        } else {
+            if (p2_money >= sum) { p2_money -= sum; return true; }
+        }
+        alert("Недостаточно средств в казне!");
+        return false;
+    }
+
+    function buyReservePlane() {
+        let hasBase = false;
+        let cName = (activePlayerID === 1) ? p1_name : p2_name;
+
+        for (let i = 0; i < allCitiesList.length; i++) {
+            if (allCitiesList[i].country === cName && allCitiesList[i].airfield) hasBase = true;
+        }
+
+        if (hasBase) {
+            if (pay(5000)) {
+                if (activePlayerID === 1) p1_pln_res++; else p2_pln_res++;
+                updateDashboard();
+            }
+        } else { alert("Для авиации нужен аэродром в любом вашем городе!"); }
+    }
+
+    /* УПРАВЛЕНИЕ ХОДОМ
+    */
+    function swapPlayerTurn() {
+        if (!isWarStarted) return;
+        
+        activePlayerID = (activePlayerID === 1) ? 2 : 1;
+        let next = (activePlayerID === 1) ? p1_name : p2_name;
+        
+        document.getElementById("waiting-text").innerText = "ОЧЕРЕДЬ КОМАНДОВАТЬ: " + next;
+        document.getElementById("turn-blocker").style.display = "flex";
+        
+        currentCommandMode = null;
+        targetCitySelection = null;
+        turnActionCount = 0;
+        updateDashboard();
+    }
+
+    function releaseTurn() {
+        document.getElementById("turn-blocker").style.display = "none";
+    }
+
+    function setMode(m) {
+        currentCommandMode = m;
+    }
+
+    /* ЕЖЕСЕКУНДНЫЙ ЦИКЛ (ИСПРАВЛЕННЫЙ)
+    */
+    setInterval(function() {
+        if (!isWarStarted) return;
+
+        for (let i = 0; i < allCitiesList.length; i++) {
+            let city = allCitiesList[i];
+
+            // 1. НАЧИСЛЕНИЕ ДЕНЕГ (+15 за город)
+            if (city.country === p1_name) {
+                if (!strikeInProcess || activePlayerID !== 1) p1_money += 15;
+                if (city.factories > 0) p1_inf_res += (city.factories * 0.05);
+            } 
+            else if (city.country === p2_name) {
+                if (!strikeInProcess || activePlayerID !== 2) p2_money += 15;
+                if (city.factories > 0) p2_inf_res += (city.factories * 0.05);
+            } 
+            else {
+                // 2. БАГ ИСПРАВЛЕН: БОТЫ (НЕЙТРАЛЫ) ПОЛУЧАЮТ ВОЙСКА
+                if (!city.bombed) {
+                    city.army += 0.5; // Прирост у ботов каждую секунду
+                }
+            }
+
+            // Танки
+            if (city.tankFac) {
+                city.tankTimer++;
+                if (city.tankTimer >= 60) {
+                    if (city.country === p1_name) p1_tnk_res++;
+                    else if (city.country === p2_name) p2_tnk_res++;
+                    city.tankTimer = 0;
+                }
+            }
+            refreshCityView(city);
+        }
+        updateDashboard();
+    }, 1000);
+
+    /* СОБЫТИЯ 5 МИНУТ
+    */
+    setInterval(function() {
+        if (!isWarStarted) return;
+        let curName = (activePlayerID === 1) ? p1_name : p2_name;
+
+        if (turnEventPhase === 'good') {
+            alert("НОВОСТИ: Народ поддерживает " + curName + "! +1000 солдат в столицу.");
+            for (let i = 0; i < allCitiesList.length; i++) {
+                if (allCitiesList[i].country === curName && capitalsList[curName] === allCitiesList[i].name) {
+                    allCitiesList[i].army += 1000;
+                }
+            }
+            turnEventPhase = 'bad';
+        } else {
+            alert("ТРЕВОГА: Митинги против войны у " + curName + "! Казна заморожена на 30 сек.");
+            strikeInProcess = true;
+            setTimeout(function() { strikeInProcess = false; }, 30000);
+            turnEventPhase = 'good';
+        }
+    }, 300000);
+
+    /* ЗАПУСК КАРТЫ
+    */
+    function launchWar() {
+        let val = document.getElementById("multi-input").value;
+        let arr = val.split(",");
+        if (arr.length < 2) { alert("Ошибка! Нужно 2 страны через запятую."); return; }
+
+        p1_name = arr[0].trim();
+        p2_name = arr[1].trim();
+
+        document.getElementById("battle-map").innerHTML = "";
+        allCitiesList = [];
+        
+        // ГОРОДА ЕВРОПЫ
+        spawnCity('Berlin', 'Germany', 500, 200);
+        spawnCity('Munich', 'Germany', 500, 320);
+        spawnCity('Hamburg', 'Germany', 500, 120);
+        spawnCity('Paris', 'France', 340, 250);
+        spawnCity('Marseille', 'France', 360, 370);
+        spawnCity('Madrid', 'Spain', 200, 380);
+        spawnCity('Barcelona', 'Spain', 260, 350);
+        spawnCity('London', 'UK', 200, 180);
+        spawnCity('Manchester', 'UK', 200, 110);
+        spawnCity('Rome', 'Italy', 460, 420);
+        spawnCity('Sicily', 'Italy', 480, 520);
+        spawnCity('Warsaw', 'Poland', 620, 260);
+        spawnCity('Krakow', 'Poland', 620, 330);
+        spawnCity('Belgrade', 'Yugoslavia', 560, 380);
+        spawnCity('Zagreb', 'Yugoslavia', 520, 360);
+        spawnCity('Sarajevo', 'Yugoslavia', 580, 440);
+        spawnCity('Moscow', 'USSR', 760, 200);
+        spawnCity('Leningrad', 'USSR', 760, 120);
+        spawnCity('Kiev', 'USSR', 700, 300);
+        spawnCity('Minsk', 'USSR', 700, 220);
+        spawnCity('Bucharest', 'Romania', 680, 400);
+        spawnCity('Cluj-Napoca', 'Romania', 650, 350);
+        spawnCity('Stockholm', 'Sweden', 700, 60);
+        spawnCity('Helsinki', 'Finland', 760, 60);
+
+        isWarStarted = true;
+        updateDashboard();
+    }
+</script>
+</body>
+</html>
